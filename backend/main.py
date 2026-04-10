@@ -3,13 +3,48 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 from typing import List
 import datetime
+import threading
 
-from database.database import create_db_and_tables, get_session
-from models.models import Patient, Appointment, TreatmentPlan, Bill, Payment, Reminder, Review, DoctorNote, Staff, Task, ActivityLog
-from models.schemas import AppointmentCreate, PaymentCreate, ReviewCreate, DoctorNoteCreate, StaffCreate, StaffUpdate, TaskCreate, TaskUpdate
-from services.automation import book_appointment, handle_treatment_completion, TREATMENT_CATALOG
+from database.database import create_db_and_tables, get_session, engine
+from models.models import Patient, Appointment, TreatmentPlan, Bill, Payment, Reminder, Review, DoctorNote, Staff, Task, ActivityLog, TaskLink, Attendance, LeaveRequest, Notification, VoiceMail
+from models.schemas import (
+    StaffLoginRequest,
+    AttendanceCheckIn,
+    AttendanceCheckOut,
+    LeaveRequestCreate,
+    LeaveStatusUpdate,
+    NotificationCreate,
+    VoiceMailCreate,
+    VoiceMailBroadcast,
+    AppointmentCreate,
+    PaymentCreate,
+    ReviewCreate,
+    DoctorNoteCreate,
+    StaffCreate,
+    StaffUpdate,
+    TaskCreate,
+    TaskUpdate,
+    AutomationSettingsUpdate,
+    SlotSuggestionRequest,
+    AssistantChatRequest,
+)
+from services.automation import book_appointment, handle_treatment_completion, TREATMENT_CATALOG, suggest_optimal_slot
+from services.smart_assistant import (
+    answer_assistant_query,
+    enqueue_appointment_reminders,
+    enqueue_followup_reminders,
+    generate_auto_tasks_for_appointment,
+    generate_auto_tasks_for_patient,
+    get_or_create_automation_settings,
+    get_smart_insights,
+    get_tasks_with_ai_priority,
+    process_due_reminders,
+    update_automation_settings,
+)
 
 app = FastAPI(title="Dentist Clinic Automation System")
+_automation_worker_stop = threading.Event()
+_automation_worker_thread = None
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,6 +57,32 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables()
+    with Session(engine) as session:
+        get_or_create_automation_settings(session)
+    _start_automation_worker()
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    _automation_worker_stop.set()
+
+
+def _automation_worker_loop():
+    while not _automation_worker_stop.is_set():
+        try:
+            with Session(engine) as session:
+                process_due_reminders(session)
+        except Exception as exc:
+            print(f"[AUTOMATION_WORKER_ERROR] {exc}")
+        _automation_worker_stop.wait(60)
+
+
+def _start_automation_worker():
+    global _automation_worker_thread
+    if _automation_worker_thread and _automation_worker_thread.is_alive():
+        return
+    _automation_worker_thread = threading.Thread(target=_automation_worker_loop, daemon=True)
+    _automation_worker_thread.start()
 
 # =========================================================
 # PATIENTS
@@ -35,6 +96,15 @@ def create_patient(patient: Patient, session: Session = Depends(get_session)):
     session.add(patient)
     session.commit()
     session.refresh(patient)
+    generate_auto_tasks_for_patient(session, patient)
+    session.add(
+        ActivityLog(
+            staff_id=None,
+            action="auto_tasks_created",
+            detail=f"Auto tasks created for new patient {patient.name}",
+        )
+    )
+    session.commit()
     return patient
 
 @app.get("/api/patients/{patient_id}")
@@ -71,14 +141,28 @@ def get_appointments(session: Session = Depends(get_session)):
 
 @app.post("/api/appointments")
 def schedule_appointment(app_req: AppointmentCreate, session: Session = Depends(get_session)):
+    patient_was_new = False
     patient = session.exec(select(Patient).where(Patient.name == app_req.patient_name, Patient.phone == app_req.phone)).first()
     if not patient:
         patient = Patient(name=app_req.patient_name, phone=app_req.phone)
         session.add(patient)
         session.commit()
         session.refresh(patient)
+        patient_was_new = True
     try:
         new_app = book_appointment(session, patient.id, app_req.treatment_type, app_req.preferred_time)
+        enqueue_appointment_reminders(session, new_app)
+        if patient_was_new:
+            generate_auto_tasks_for_patient(session, patient)
+        generate_auto_tasks_for_appointment(session, new_app, patient)
+        session.add(
+            ActivityLog(
+                staff_id=None,
+                action="automation_triggered",
+                detail=f"Appointment automation run for appointment #{new_app.id}",
+            )
+        )
+        session.commit()
         return new_app
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -87,6 +171,15 @@ def schedule_appointment(app_req: AppointmentCreate, session: Session = Depends(
 def complete_appointment(appointment_id: int, session: Session = Depends(get_session)):
     try:
         app_obj = handle_treatment_completion(session, appointment_id)
+        enqueue_followup_reminders(session, app_obj)
+        session.add(
+            ActivityLog(
+                staff_id=None,
+                action="followup_automation",
+                detail=f"3-day and 7-day follow-ups queued for appointment #{appointment_id}",
+            )
+        )
+        session.commit()
         return app_obj
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -96,10 +189,26 @@ def update_appointment_status(appointment_id: int, status: dict, session: Sessio
     app_obj = session.get(Appointment, appointment_id)
     if not app_obj:
         raise HTTPException(status_code=404, detail="Appointment not found")
+    old_status = app_obj.status
     app_obj.status = status.get("status", app_obj.status)
     session.add(app_obj)
     session.commit()
+    if old_status != "Completed" and app_obj.status == "Completed":
+        enqueue_followup_reminders(session, app_obj)
+        session.commit()
     return app_obj
+
+
+@app.post("/api/appointments/suggest-slot")
+def suggest_time_slot(payload: SlotSuggestionRequest, session: Session = Depends(get_session)):
+    treatment = TREATMENT_CATALOG.get(payload.treatment_type)
+    if not treatment:
+        raise HTTPException(status_code=400, detail="Unknown treatment type")
+    suggested = suggest_optimal_slot(session, payload.preferred_time, treatment["duration"])
+    return {
+        "suggested_time": suggested,
+        "message": f"Best available slot: {suggested.strftime('%I:%M %p').lstrip('0')}",
+    }
 
 # =========================================================
 # TREATMENTS
@@ -203,6 +312,26 @@ def dismiss_reminder(reminder_id: int, session: Session = Depends(get_session)):
     session.commit()
     return reminder
 
+
+@app.get("/api/settings/automation")
+def get_automation_settings(session: Session = Depends(get_session)):
+    settings = get_or_create_automation_settings(session)
+    return {
+        "reminders_enabled": settings.reminders_enabled,
+        "reminder_channel": settings.reminder_channel,
+    }
+
+
+@app.put("/api/settings/automation")
+def put_automation_settings(payload: AutomationSettingsUpdate, session: Session = Depends(get_session)):
+    if payload.reminder_channel not in {"WhatsApp", "SMS"}:
+        raise HTTPException(status_code=400, detail="reminder_channel must be WhatsApp or SMS")
+    settings = update_automation_settings(session, payload.reminders_enabled, payload.reminder_channel)
+    return {
+        "reminders_enabled": settings.reminders_enabled,
+        "reminder_channel": settings.reminder_channel,
+    }
+
 # =========================================================
 # DASHBOARD
 # =========================================================
@@ -233,6 +362,9 @@ def get_dashboard_data(session: Session = Depends(get_session)):
     pending_reminders = len(session.exec(
         select(Reminder).where(Reminder.status == "Pending")
     ).all())
+    pending_followups = len(session.exec(
+        select(Reminder).where(Reminder.status == "Pending", Reminder.reminder_type.contains("FOLLOWUP:"))
+    ).all())
 
     total_reviews = session.exec(select(Review)).all()
     avg_rating = round(sum(r.rating for r in total_reviews) / len(total_reviews), 1) if total_reviews else 0
@@ -255,8 +387,10 @@ def get_dashboard_data(session: Session = Depends(get_session)):
         "revenue_today": revenue_today,
         "ongoing_treatments": ongoing_treatments,
         "pending_reminders": pending_reminders,
+        "pending_followups": pending_followups,
         "avg_rating": avg_rating,
-        "todays_appointments": todays_appointments_formatted
+        "todays_appointments": todays_appointments_formatted,
+        "smart_insights": get_smart_insights(session),
     }
 
 
@@ -339,29 +473,27 @@ def deactivate_staff(staff_id: int, session: Session = Depends(get_session)):
 # =========================================================
 @app.get("/api/tasks")
 def get_tasks(session: Session = Depends(get_session)):
-    tasks = session.exec(select(Task).order_by(Task.created_at.desc())).all()
-    result = []
-    for t in tasks:
-        assignee = session.get(Staff, t.assigned_to) if t.assigned_to else None
-        creator = session.get(Staff, t.created_by) if t.created_by else None
-        result.append({
-            **t.dict(),
-            "assigned_to_name": assignee.name if assignee else None,
-            "assigned_to_color": assignee.avatar_color if assignee else None,
-            "created_by_name": creator.name if creator else None
-        })
-    return result
+    return get_tasks_with_ai_priority(session)
 
 @app.post("/api/tasks")
 def create_task(task_data: TaskCreate, session: Session = Depends(get_session)):
-    new_task = Task(**task_data.dict())
+    payload = task_data.dict()
+    patient_id = payload.pop("patient_id", None)
+    appointment_id = payload.pop("appointment_id", None)
+    new_task = Task(**payload)
     session.add(new_task)
     session.commit()
     session.refresh(new_task)
+    if patient_id is not None or appointment_id is not None:
+        session.add(TaskLink(task_id=new_task.id, patient_id=patient_id, appointment_id=appointment_id))
+        session.commit()
     assignee_name = "Unassigned"
     if new_task.assigned_to:
         assignee = session.get(Staff, new_task.assigned_to)
         assignee_name = assignee.name if assignee else "Unknown"
+        # Notify the staff member
+        notif = Notification(staff_id=new_task.assigned_to, title="New Task", message=f"You have been assigned a task: {new_task.title}", notification_type="task")
+        session.add(notif)
     _log_activity(session, new_task.created_by, "task_created", f"Task '{new_task.title}' created, assigned to {assignee_name}")
     session.commit()
     return new_task
@@ -390,6 +522,9 @@ def delete_task(task_id: int, session: Session = Depends(get_session)):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     title = task.title
+    links = session.exec(select(TaskLink).where(TaskLink.task_id == task.id)).all()
+    for link in links:
+        session.delete(link)
     _log_activity(session, task.assigned_to, "task_deleted", f"Task '{title}' was deleted")
     session.delete(task)
     session.commit()
@@ -439,3 +574,195 @@ def get_team_stats(session: Session = Depends(get_session)):
         "tasks_done": tasks_done,
         "overdue_tasks": overdue
     }
+
+
+@app.get("/api/insights")
+def smart_insights(session: Session = Depends(get_session)):
+    return {"items": get_smart_insights(session)}
+
+
+@app.post("/api/assistant/chat")
+def assistant_chat(payload: AssistantChatRequest, session: Session = Depends(get_session)):
+    answer = answer_assistant_query(session, payload.message)
+    return {"answer": answer}
+
+# =========================================================
+# NEW STAFF PORTAL ENDPOINTS
+# =========================================================
+
+@app.post("/api/staff/login")
+def staff_login(payload: StaffLoginRequest, session: Session = Depends(get_session)):
+    query = select(Staff).where(Staff.phone == payload.phone, Staff.status == "Active")
+    staff = session.exec(query).first()
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff not found with this phone number")
+    return staff
+
+# ----------------- ATTENDANCE -----------------
+
+@app.post("/api/attendance/checkin")
+def check_in(payload: AttendanceCheckIn, session: Session = Depends(get_session)):
+    staff = session.get(Staff, payload.staff_id)
+    if not staff: raise HTTPException(status_code=404, detail="Staff not found")
+    
+    today_str = datetime.date.today().isoformat()
+    existing = session.exec(select(Attendance).where(Attendance.staff_id == payload.staff_id, Attendance.date == today_str)).first()
+    
+    if existing:
+        return existing
+        
+    att = Attendance(staff_id=payload.staff_id, date=today_str, check_in=datetime.datetime.utcnow())
+    session.add(att)
+    session.commit()
+    session.refresh(att)
+    return att
+
+@app.post("/api/attendance/checkout")
+def check_out(payload: AttendanceCheckOut, session: Session = Depends(get_session)):
+    today_str = datetime.date.today().isoformat()
+    att = session.exec(select(Attendance).where(Attendance.staff_id == payload.staff_id, Attendance.date == today_str)).first()
+    if not att: raise HTTPException(status_code=404, detail="No check-in found for today")
+    if att.check_out: return att
+
+    att.check_out = datetime.datetime.utcnow()
+    diff = att.check_out - att.check_in
+    att.hours_worked = round(diff.total_seconds() / 3600.0, 2)
+    session.add(att)
+    session.commit()
+    session.refresh(att)
+    return att
+
+@app.get("/api/attendance/today")
+def get_attendance_today(session: Session = Depends(get_session)):
+    today_str = datetime.date.today().isoformat()
+    atts = session.exec(select(Attendance).where(Attendance.date == today_str)).all()
+    result = []
+    for a in atts:
+        staff = session.get(Staff, a.staff_id)
+        result.append({"attendance": a, "staff": staff})
+    return result
+
+@app.get("/api/attendance/{staff_id}")
+def get_staff_attendance(staff_id: int, session: Session = Depends(get_session)):
+    atts = session.exec(select(Attendance).where(Attendance.staff_id == staff_id).order_by(Attendance.date.desc())).all()
+    return atts
+
+# ----------------- LEAVE REQUESTS -----------------
+
+@app.post("/api/leave")
+def request_leave(payload: LeaveRequestCreate, session: Session = Depends(get_session)):
+    req = LeaveRequest(**payload.dict())
+    session.add(req)
+    session.commit()
+    session.refresh(req)
+    # Notify Admin
+    notif = Notification(staff_id=1, title="New Leave Request", message=f"A new leave request was submitted.", notification_type="leave")
+    session.add(notif)
+    session.commit()
+    return req
+
+@app.get("/api/leave/all")
+def get_all_leave(session: Session = Depends(get_session)):
+    leaves = session.exec(select(LeaveRequest).order_by(LeaveRequest.created_at.desc())).all()
+    res = []
+    for l in leaves:
+        staff = session.get(Staff, l.staff_id)
+        res.append({"leave": l, "staff": staff})
+    return res
+
+@app.get("/api/leave/{staff_id}")
+def get_staff_leave(staff_id: int, session: Session = Depends(get_session)):
+    leaves = session.exec(select(LeaveRequest).where(LeaveRequest.staff_id == staff_id).order_by(LeaveRequest.created_at.desc())).all()
+    return leaves
+
+@app.put("/api/leave/{leave_id}")
+def update_leave_status(leave_id: int, payload: LeaveStatusUpdate, session: Session = Depends(get_session)):
+    req = session.get(LeaveRequest, leave_id)
+    if not req: raise HTTPException(status_code=404, detail="Leave request not found")
+    req.status = payload.status
+    if payload.admin_note: req.admin_note = payload.admin_note
+    session.add(req)
+    
+    # Send notification to staff
+    notif = Notification(staff_id=req.staff_id, title=f"Leave {req.status}", message=f"Your leave from {req.start_date} to {req.end_date} has been {req.status}.", notification_type="leave")
+    session.add(notif)
+    session.commit()
+    return req
+
+# ----------------- NOTIFICATIONS -----------------
+
+@app.get("/api/notifications/{staff_id}")
+def get_notifications(staff_id: int, session: Session = Depends(get_session)):
+    notifs = session.exec(select(Notification).where(Notification.staff_id == staff_id).order_by(Notification.created_at.desc())).all()
+    return notifs
+
+@app.put("/api/notifications/{notification_id}/read")
+def read_notification(notification_id: int, session: Session = Depends(get_session)):
+    n = session.get(Notification, notification_id)
+    if n:
+        n.is_read = True
+        session.add(n)
+        session.commit()
+    return n
+
+# ----------------- VOICEMAIL -----------------
+
+@app.post("/api/voicemail")
+def send_voicemail(payload: VoiceMailCreate, session: Session = Depends(get_session)):
+    vm = VoiceMail(**payload.dict())
+    session.add(vm)
+    
+    sender_name = "Admin"
+    if vm.from_staff_id:
+        s = session.get(Staff, vm.from_staff_id)
+        if s: sender_name = s.name
+        
+    msg = f"New{' emergency' if vm.is_emergency else ''} voicemail from {sender_name}."
+    notif = Notification(staff_id=vm.to_staff_id, title="New Voicemail", message=msg, notification_type="voicemail")
+    session.add(notif)
+    session.commit()
+    session.refresh(vm)
+    return vm
+
+@app.post("/api/voicemail/broadcast")
+def broadcast_voicemail(payload: VoiceMailBroadcast, session: Session = Depends(get_session)):
+    targets = []
+    if payload.to_all:
+        staffs = session.exec(select(Staff).where(Staff.status == "Active")).all()
+        targets = [s.id for s in staffs if s.id != payload.from_staff_id]
+    elif payload.to_staff_ids:
+        targets = payload.to_staff_ids
+        
+    vms = []
+    for tid in targets:
+        vm = VoiceMail(from_staff_id=payload.from_staff_id, to_staff_id=tid, audio_data=payload.audio_data, message=payload.message, is_emergency=payload.is_emergency)
+        session.add(vm)
+        vms.append(vm)
+        
+        sender_name = "Admin"
+        if vm.from_staff_id:
+            s = session.get(Staff, vm.from_staff_id)
+            if s: sender_name = s.name
+        notif = Notification(staff_id=tid, title="New Voicemail", message=f"Broadcast from {sender_name}.", notification_type="voicemail")
+        session.add(notif)
+        
+    session.commit()
+    return {"message": f"Sent to {len(targets)} staff members"}
+
+@app.get("/api/voicemail/{staff_id}")
+def get_staff_voicemail(staff_id: int, session: Session = Depends(get_session)):
+    vms = session.exec(select(VoiceMail).where(VoiceMail.to_staff_id == staff_id).order_by(VoiceMail.created_at.desc())).all()
+    res = []
+    for v in vms:
+        sender = session.get(Staff, v.from_staff_id) if v.from_staff_id else None
+        res.append({"voicemail": v, "sender": sender})
+    return res
+
+@app.put("/api/voicemail/{vm_id}/listened")
+def read_voicemail(vm_id: int, session: Session = Depends(get_session)):
+    vm = session.get(VoiceMail, vm_id)
+    if vm:
+        vm.is_listened = True
+        session.add(vm)
+        session.commit()
+    return vm

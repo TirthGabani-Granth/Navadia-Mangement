@@ -35,6 +35,39 @@ def calculate_next_available_slot(session: Session, target_time: datetime, durat
             
     return proposed_time
 
+
+def suggest_optimal_slot(session: Session, target_time: datetime, duration: int) -> datetime:
+    """
+    Suggest the best slot by avoiding overlap and balancing hourly load.
+    Checks candidate slots every 30 minutes in the next 8 hours.
+    """
+    candidates = [target_time + timedelta(minutes=30 * i) for i in range(16)]
+    best_slot = None
+    best_score = None
+
+    for candidate in candidates:
+        slot = calculate_next_available_slot(session, candidate, duration)
+        hour_start = slot.replace(minute=0, second=0, microsecond=0)
+        hour_end = hour_start + timedelta(hours=1)
+        hour_appointments = session.exec(
+            select(Appointment).where(
+                Appointment.appointment_time >= hour_start,
+                Appointment.appointment_time < hour_end,
+                Appointment.status != "Completed",
+            )
+        ).all()
+        load_score = len(hour_appointments)
+
+        # Prefer earlier slots, but avoid overloaded hours
+        time_penalty = int((slot - target_time).total_seconds() / 1800)
+        score = (load_score * 10) + time_penalty
+
+        if best_score is None or score < best_score:
+            best_score = score
+            best_slot = slot
+
+    return best_slot if best_slot else calculate_next_available_slot(session, target_time, duration)
+
 def book_appointment(session: Session, patient_id: int, treatment_type: str, preferred_time: datetime) -> Appointment:
     catalog_info = TREATMENT_CATALOG.get(treatment_type)
     if not catalog_info:

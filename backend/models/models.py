@@ -1,6 +1,6 @@
 from sqlmodel import Field, SQLModel, Relationship
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 
 class Patient(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -100,3 +100,63 @@ class ActivityLog(SQLModel, table=True):
     action: str  # e.g. "completed task", "added member", "updated status"
     detail: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TaskLink(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    task_id: int = Field(foreign_key="task.id", index=True)
+    patient_id: Optional[int] = Field(default=None, foreign_key="patient.id", index=True)
+    appointment_id: Optional[int] = Field(default=None, foreign_key="appointment.id", index=True)
+
+
+class AutomationSettings(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    reminders_enabled: bool = Field(default=True)
+    reminder_channel: str = Field(default="WhatsApp")  # WhatsApp or SMS
+
+
+# =========================================================
+# NEW MODELS — Staff Management Features
+# =========================================================
+
+class Attendance(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    staff_id: int = Field(foreign_key="staff.id", index=True)
+    date: str = Field(index=True)  # YYYY-MM-DD string for easy querying
+    check_in: Optional[datetime] = None
+    check_out: Optional[datetime] = None
+    status: str = Field(default="Present")  # Present, Half-Day, Absent
+    hours_worked: Optional[float] = None
+
+
+class LeaveRequest(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    staff_id: int = Field(foreign_key="staff.id", index=True)
+    start_date: str  # YYYY-MM-DD
+    end_date: str    # YYYY-MM-DD
+    reason: str
+    leave_type: str = Field(default="Casual")  # Casual, Sick, Emergency, Personal
+    status: str = Field(default="Pending")  # Pending, Approved, Rejected
+    admin_note: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Notification(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    staff_id: int = Field(foreign_key="staff.id", index=True)
+    title: str
+    message: str
+    notification_type: str = Field(default="general")  # task, leave, voicemail, general, attendance
+    is_read: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class VoiceMail(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    from_staff_id: Optional[int] = Field(default=None, foreign_key="staff.id")
+    to_staff_id: int = Field(foreign_key="staff.id", index=True)
+    audio_data: Optional[str] = None  # base64 encoded audio
+    message: Optional[str] = None  # text message along with voicemail
+    is_emergency: bool = Field(default=False)
+    is_listened: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)

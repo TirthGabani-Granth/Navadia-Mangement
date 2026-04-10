@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import DashboardCards from '../components/DashboardCards';
-import AppointmentTable from '../components/AppointmentTable';
+import AssistantChat from '../components/AssistantChat';
 import api from '../api';
 import { Sparkles } from 'lucide-react';
 
@@ -10,7 +10,7 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await api.get('/dashboard');
+      const response = await api.get('/team/stats');
       setData(response.data);
     } catch (error) {
       console.error("Failed to fetch dashboard data:", error);
@@ -20,19 +20,6 @@ export default function Dashboard() {
   };
 
   useEffect(() => { fetchDashboardData(); }, []);
-
-  const handleUpdateStatus = async (id, status) => {
-    try {
-      if (status === 'Completed') {
-        await api.post(`/appointments/${id}/complete`);
-      } else {
-        await api.post(`/appointments/${id}/status`, { status });
-      }
-      fetchDashboardData();
-    } catch (error) {
-      console.error("Failed to update status:", error);
-    }
-  };
 
   if (loading) {
     return (
@@ -59,11 +46,10 @@ export default function Dashboard() {
       </div>
 
       <DashboardCards data={data} />
-      
-      <AppointmentTable
-        appointments={data?.todays_appointments || []}
-        onUpdateStatus={handleUpdateStatus}
-      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6 mb-6">
+        <AssistantChat />
+      </div>
     </div>
   );
 }
