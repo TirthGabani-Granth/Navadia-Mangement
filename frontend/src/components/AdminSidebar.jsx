@@ -3,22 +3,18 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Calendar, Users, Stethoscope, Receipt, TrendingUp,
   Settings, ChevronLeft, ChevronRight, Bell, Star, ArrowLeft,
-  UserCog, ListTodo, Activity, Wallet
+  UserCog, ListTodo, Activity, Wallet, Clock, CalendarOff, Mic
 } from 'lucide-react';
 
 const NAV = [
   { name: 'Dashboard', icon: LayoutDashboard, path: '/admin' },
-  { name: 'Appointments', icon: Calendar, path: '/admin/appointments' },
-  { name: 'Patients', icon: Users, path: '/admin/patients' },
-  { name: 'Treatments', icon: Stethoscope, path: '/admin/treatments' },
-  { name: 'Billing', icon: Receipt, path: '/admin/billing' },
   { name: 'Salary & Earnings', icon: Wallet, path: '/admin/salary' },
-  { name: 'Reminders', icon: Bell, path: '/admin/reminders' },
-  { name: 'Reviews', icon: Star, path: '/admin/reviews' },
-  { name: 'Analytics', icon: TrendingUp, path: '/admin/analytics' },
   { type: 'divider', label: 'Team' },
   { name: 'Team', icon: UserCog, path: '/admin/team' },
+  { name: 'Attendance', icon: Clock, path: '/admin/attendance' },
   { name: 'Tasks', icon: ListTodo, path: '/admin/tasks' },
+  { name: 'Leave Requests', icon: CalendarOff, path: '/admin/leave' },
+  { name: 'Voicemail', icon: Mic, path: '/admin/voicemail' },
   { name: 'Activity', icon: Activity, path: '/admin/activity' },
   { type: 'divider' },
   { name: 'Settings', icon: Settings, path: '/admin/settings' },

@@ -4,7 +4,7 @@ import api from '../api';
 
 const STATUSES = ['To Do', 'In Progress', 'Done'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
-const CATEGORIES = ['General', 'Patient Care', 'Equipment', 'Admin', 'Cleaning'];
+const CATEGORIES = ['General', 'Staff Care', 'Equipment', 'Admin', 'Cleaning'];
 
 const PRIORITY_STYLES = {
   Low: { bg: 'bg-slate-50', text: 'text-slate-500', dot: 'bg-slate-400' },
@@ -122,6 +122,15 @@ export default function TaskBoard() {
                         <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${ps.bg} ${ps.text}`}>{task.priority}</span>
                         <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-slate-50 text-slate-500">{task.category}</span>
                         {od && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-red-50 text-red-500">Overdue</span>}
+                        {task.ai_priority && (
+                          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                            task.ai_priority === 'Urgent'
+                              ? 'bg-red-100 text-red-700 border border-red-200'
+                              : 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                          }`}>
+                            AI Priority: {task.ai_priority}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-slate-400">
                         <div className="flex items-center gap-2">

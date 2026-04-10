@@ -4,32 +4,32 @@ import { Users, CalendarCheck, IndianRupee, Activity, TrendingUp } from 'lucide-
 export default function DashboardCards({ data }) {
   const cards = [
     { 
-      title: "Patients Today", 
-      value: data?.total_patients_today || 0, 
+      title: "Total Staff Members", 
+      value: data?.total_members || 0, 
       icon: Users, 
       gradient: "from-blue-500 to-cyan-500",
       shadow: "shadow-blue-200"
     },
     { 
-      title: "Appointments", 
-      value: data?.appointments_today || 0, 
+      title: "Total Tasks", 
+      value: data?.total_tasks || 0, 
       icon: CalendarCheck, 
       gradient: "from-teal-500 to-emerald-500",
       shadow: "shadow-teal-200"
     },
     { 
-      title: "Revenue Today", 
-      value: `₹${data?.revenue_today?.toLocaleString() || 0}`, 
-      icon: IndianRupee, 
+      title: "Tasks Completed", 
+      value: data?.tasks_done || 0, 
+      icon: Activity, 
       gradient: "from-orange-500 to-amber-500",
       shadow: "shadow-orange-200"
     },
     { 
-      title: "Active Treatments", 
-      value: data?.ongoing_treatments || 0, 
-      icon: Activity, 
-      gradient: "from-purple-500 to-pink-500",
-      shadow: "shadow-purple-200"
+      title: "Overdue Tasks", 
+      value: data?.overdue_tasks || 0, 
+      icon: TrendingUp, 
+      gradient: "from-red-500 to-pink-500",
+      shadow: "shadow-red-200"
     },
   ];
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Save, Building2, User, MapPin, Phone, Clock, Check } from 'lucide-react';
+import api from '../api';
 
 export default function Settings() {
   const [settings, setSettings] = useState({
@@ -11,12 +12,34 @@ export default function Settings() {
     closeTime: '18:00',
     slotDuration: 30,
     currency: '₹',
+    remindersEnabled: true,
+    reminderChannel: 'WhatsApp',
   });
   const [saved, setSaved] = useState(false);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  React.useEffect(() => {
+    api.get('/settings/automation')
+      .then((res) => {
+        setSettings((prev) => ({
+          ...prev,
+          remindersEnabled: res.data.reminders_enabled,
+          reminderChannel: res.data.reminder_channel,
+        }));
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSave = async () => {
+    try {
+      await api.put('/settings/automation', {
+        reminders_enabled: settings.remindersEnabled,
+        reminder_channel: settings.reminderChannel,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      alert('Failed to save automation settings');
+    }
   };
 
   const set = (key, val) => setSettings(s => ({ ...s, [key]: val }));
@@ -135,6 +158,40 @@ export default function Settings() {
       </div>
 
       {/* Save Button */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-violet-500 to-indigo-500">
+          <h2 className="font-semibold text-white">Smart Reminders</h2>
+        </div>
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="rounded-xl border border-slate-200 px-4 py-3">
+            <label className="text-sm font-medium text-slate-700">Enable Smart Appointment Reminders</label>
+            <p className="text-xs text-slate-500 mt-1">24 hours and 2 hours before appointments.</p>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => set('remindersEnabled', !settings.remindersEnabled)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                  settings.remindersEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {settings.remindersEnabled ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Reminder Channel</label>
+            <select
+              value={settings.reminderChannel}
+              onChange={(e) => set('reminderChannel', e.target.value)}
+              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none text-sm"
+            >
+              <option value="WhatsApp">WhatsApp</option>
+              <option value="SMS">SMS</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       <div className="flex justify-end">
         <button
           onClick={handleSave}
