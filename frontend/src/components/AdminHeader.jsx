@@ -11,7 +11,7 @@ export default function AdminHeader({ setMobileOpen }) {
         
         <div className="hidden sm:flex items-center gap-2 bg-slate-50 rounded-xl px-4 py-2.5 w-72">
           <Search size={16} className="text-slate-400" />
-          <input type="text" placeholder="Search patients, appointments..." className="bg-transparent text-sm text-slate-600 placeholder:text-slate-400 outline-none flex-1" />
+          <input type="text" placeholder="Search tasks, teams..." className="bg-transparent text-sm text-slate-600 placeholder:text-slate-400 outline-none flex-1" />
         </div>
       </div>
 

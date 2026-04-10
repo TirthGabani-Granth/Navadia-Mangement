@@ -17,7 +17,7 @@ const SPECIALIZATIONS = [
   'Teeth Whitening',
   'Dental X-Ray',
   'Sterilization & Hygiene',
-  'Patient Coordination',
+  'Office Coordination',
   'Billing & Insurance',
   'Front Desk',
 ];

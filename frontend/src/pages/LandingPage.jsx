@@ -45,7 +45,7 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
             <button
               onClick={() => navigate('/admin')}
-              className="group relative overflow-hidden bg-white rounded-3xl p-8 text-left shadow-xl shadow-slate-200/50 hover:shadow-2xl hover:shadow-teal-200/50 transition-all duration-500 border border-slate-100 hover:border-teal-200"
+              className="group relative overflow-hidden bg-white rounded-3xl p-8 text-left shadow-xl shadow-slate-200/50 hover:shadow-2xl hover:shadow-teal-200/50 transition-all duration-500 border border-slate-100 hover:border-teal-200 w-full"
             >
               <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-teal-100 to-transparent rounded-bl-full opacity-50"></div>
               <div className="relative">
@@ -54,7 +54,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="text-xl font-bold text-slate-800 mb-2">Doctor Panel</h3>
                 <p className="text-slate-500 text-sm mb-6 leading-relaxed">
-                  Manage patients, appointments, billing, team & clinic operations
+                  Manage team tasks, activity, salary & clinic operations
                 </p>
                 <span className="inline-flex items-center gap-2 text-teal-600 font-semibold text-sm group-hover:gap-4 transition-all">
                   Open Dashboard →
@@ -63,20 +63,20 @@ export default function LandingPage() {
             </button>
 
             <button
-              onClick={() => navigate('/customer')}
-              className="group relative overflow-hidden bg-white rounded-3xl p-8 text-left shadow-xl shadow-slate-200/50 hover:shadow-2xl hover:shadow-orange-200/50 transition-all duration-500 border border-slate-100 hover:border-orange-200"
+              onClick={() => navigate('/staff-login')}
+              className="group relative overflow-hidden bg-white rounded-3xl p-8 text-left shadow-xl shadow-slate-200/50 hover:shadow-2xl hover:shadow-cyan-200/50 transition-all duration-500 border border-slate-100 hover:border-cyan-200 w-full"
             >
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-100 to-transparent rounded-bl-full opacity-50"></div>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-cyan-100 to-transparent rounded-bl-full opacity-50"></div>
               <div className="relative">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-400 to-orange-500 flex items-center justify-center mb-5 shadow-lg shadow-orange-200 group-hover:scale-110 transition-transform">
-                  <Heart size={26} className="text-white" />
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center mb-5 shadow-lg shadow-cyan-200 group-hover:scale-110 transition-transform">
+                  <Users size={26} className="text-white" />
                 </div>
-                <h3 className="text-xl font-bold text-slate-800 mb-2">Patient Portal</h3>
+                <h3 className="text-xl font-bold text-slate-800 mb-2">Team Member Portal</h3>
                 <p className="text-slate-500 text-sm mb-6 leading-relaxed">
-                  Book appointments, view your visits & share feedback about care
+                  Check-in, view your tasks, request leave, and check voicemails
                 </p>
-                <span className="inline-flex items-center gap-2 text-orange-600 font-semibold text-sm group-hover:gap-4 transition-all">
-                  Book Appointment →
+                <span className="inline-flex items-center gap-2 text-cyan-600 font-semibold text-sm group-hover:gap-4 transition-all">
+                  Team Login →
                 </span>
               </div>
             </button>
@@ -91,8 +91,7 @@ export default function LandingPage() {
             <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center mx-auto mb-3">
               <Users size={22} className="text-teal-600" />
             </div>
-            <p className="text-3xl font-bold text-slate-800">500+</p>
-            <p className="text-sm text-slate-500">Happy Patients</p>
+            <p className="text-sm text-slate-500">Happy Clients</p>
           </div>
           <div>
             <div className="w-12 h-12 rounded-full bg-cyan-100 flex items-center justify-center mx-auto mb-3">
